@@ -1,0 +1,205 @@
+#!/bin/bash
+
+#
+# Rigid - Generate static webpage with simple template
+#
+# Usage: rigid [targetDir]
+#               ^^^^^^^^^ defaults to current working directory name + ".rigid"
+#
+# Instructions: 
+# - Create "rigid.template.html" with placeholders %TITLE% and %CONTENT%
+# - Run this script
+#
+# Author: Adrian Dvergsdal <atmoz.net & github.com/atmoz>
+#
+
+
+################################################################################
+#
+# License
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# http://www.gnu.org/licenses/
+#
+
+
+################################################################################
+#
+# Configuration
+#
+# @param $1 target dir
+#
+
+function prepare_settings() {
+    # determine dirname to this script
+    scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+    sourceDir="$PWD"
+
+    if [ ! -z $1 ]; then
+        targetDir="$1"
+    else
+        targetDir="$sourceDir/../`basename $sourceDir`.rigid"
+    fi
+
+    template="$sourceDir/rigid.template.html"
+    md2html="$scriptDir/md2html.awk"
+
+    if [ ! -r "$template" ]; then
+        echo "Could not read template file: $template"
+        exit 0
+    fi
+}
+
+
+################################################################################
+#
+# Prepare build dir structure
+#
+
+function prepare_dirs() {
+    sourceDir="`echo $sourceDir | sed -e 's,/*$,,'`"
+
+    rm -rf $targetDir
+    mkdir -p $targetDir
+    cp -rf $sourceDir/* $targetDir
+    #rm -f `find $targetDir -type f -iname '*.md'`
+    rm -f "$targetDir/"{rigid.template.html,rigid,md2html.awk}
+
+    cd $sourceDir
+    files=`find . -iname '*.*' -type f | sed -e 's,^\./,,'`
+    for file in $files; do
+        case "${file##*/}" in
+            md)
+                html="$targetDir/`echo $file | sed -e 's,.md$,.html,g'`"
+                echo "* $file"
+                generate_page $file > $html;
+                ;;
+        esac
+    done
+}
+
+
+################################################################################
+#
+# Generate page with template and convert markdown to HTML
+#
+# @param $1 filename
+#
+
+function generate_page() {
+    title=$(get_page_title "$1")
+
+    # convert markdown to HTML
+    if [ -x "$md2html" ]; then
+        content=$(echo `$md2html $1`)
+    else
+        content=$(<$1)
+    fi
+
+    # replace placeholders, if template exist
+    if [ -r "$template" ]; then
+        page=$(<$template)
+        page=$(echo "${page//%TITLE%/$title}")
+        page=$(echo "${page//%CONTENT%/$content}")
+    else
+        page="$content";
+    fi
+
+    echo $(get_published_date $1)
+}
+
+
+################################################################################
+#
+# Get date when file was added to git or created in filesystem
+#
+# @param $1 filename
+#
+
+function get_published_date() {
+    if [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1; then
+        hash git 2>&- && gitdate=$(git log --format=%aD -- "$1" | tail -1)
+    fi
+
+    if [ -n "$gitdate" ]; then
+        echo "$gitdate"
+    else
+        date -R -r "$1"
+    fi
+}
+
+
+################################################################################
+#
+# Get page title
+#
+# @param $1 filename
+#
+
+function get_page_title() {
+    echo "$1" # not implemented
+}
+
+
+################################################################################
+#
+# Create RSS for content in dir
+#
+
+function create_rss() {
+    cd $1;
+    rssfile="$1.$RANDOM"
+    while [ -f "$rssfile" ]; do rssfile="$1.$RANDOM"; done
+
+    echo '<?xml version="1.0" encoding="UTF-8" ?>' >> "$rssfile"
+    echo '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">' >> "$rssfile"
+    echo '<channel><title>'$global_title'</title><link>'$global_url'</link>' >> "$rssfile"
+    echo '<description>'$global_description'</description><language>en</language>' >> "$rssfile"
+    echo '<lastBuildDate>'$(date -R)'</lastBuildDate>' >> "$rssfile"
+    echo '<pubDate>'$(date -R)'</pubDate>' >> "$rssfile"
+    echo '<atom:link href="'$global_url/$blog_feed'" rel="self" type="application/rss+xml" />' >> "$rssfile"
+
+    n=0
+    for i in $(ls -t *.html); do
+        if [ "$i" == "$index_file" ] || [ "$i" == "$archive_index" ]; then continue; fi
+        if [ "$n" -ge "$number_of_feed_articles" ]; then break; fi # max 10 items
+        echo -n "."
+        echo '<item><title>' >> "$rssfile"
+        echo "$(awk '/<h3><a class="ablack" href=".+">/, /<\/a><\/h3>/{if (!/<h3><a class="ablack" href=".+">/ && !/<\/a><\/h3>/) print}' $i)" >> "$rssfile"
+        echo '</title><description><![CDATA[' >> "$rssfile"
+        echo "$(awk '/<!-- text begin -->/, /<!-- entry end -->/{if (!/<!-- text begin -->/ && !/<!-- entry end -->/) print}' $i)" >> "$rssfile"
+
+        echo "]]></description><link>$global_url/$i</link>" >> "$rssfile"
+        echo "<guid>$global_url/$i</guid>" >> "$rssfile"
+        echo "<dc:creator>$global_author</dc:creator>" >> "$rssfile"
+        echo '<pubDate>'$(date -r "$i" -R)'</pubDate></item>' >> "$rssfile"
+
+        n=$(( $n + 1 ))
+    done
+
+    echo '</channel></rss>' >> "$rssfile"
+    echo ""
+
+    mv "$rssfile" "$blog_feed"
+    chmod 644 "$blog_feed"
+}
+
+
+################################################################################
+#
+# Rigidify!
+#
+
+prepare_settings $1 $2
+prepare_dirs
+

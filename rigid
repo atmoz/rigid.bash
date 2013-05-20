@@ -1,17 +1,21 @@
 #!/bin/bash
 
 #
-# Rigid - Generate static webpage with simple template
+# Rigid - Generate static webpage with markdown and simple template
 #
-# Usage: rigid [targetDir]
-#               ^^^^^^^^^ defaults to current working directory name + ".rigid"
+# Usage: rigid [sourceDir] [targetDir] [templateFile]
 #
-# Instructions: 
-# - Create "rigid.template.html" with placeholders %TITLE% and %CONTENT%
-# - Run this script
+# Instructions:
+# - Create "rigid.template.html" in source directory (or use third argument)
+#   with placeholders %TITLE% and %CONTENT%.
+# - Run this script from source directory (or add path as first argument).
+#   Source directory is copied to <sourceDir>.rigid (or secound argument).
+#   Each *.md file is converted to HTML and wrapped with your template.
 #
 # Author: Adrian Dvergsdal <atmoz.net & github.com/atmoz>
 #
+
+rigidVersion="1.0.0"
 
 
 ################################################################################
@@ -36,56 +40,65 @@
 #
 # Configuration
 #
-# @param $1 target dir
+# @param $1 sourceDir
+# @param $2 targetDir
+# @param $3 templateFile
 #
-
 function prepare_settings() {
-    # determine dirname to this script
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
-    sourceDir="$PWD"
-
-    if [ ! -z $1 ]; then
-        targetDir="$1"
-    else
-        targetDir="$sourceDir/../`basename $sourceDir`.rigid"
-    fi
-
-    template="$sourceDir/rigid.template.html"
     md2html="$scriptDir/md2html.awk"
 
-    if [ ! -r "$template" ]; then
-        echo "Could not read template file: $template"
-        exit 0
+    sourceDir="$PWD"
+    targetDir="$sourceDir/../`basename $sourceDir`.rigid"
+
+    if [ ! -z $1 ]; then
+        sourceDir="$1"
     fi
+
+    if [ ! -z $2 ]; then
+        targetDir="$2"
+    fi
+
+    templateFile="$sourceDir/rigid.template.html"
+
+    if [ ! -z $3 ]; then
+        templateFile="$3"
+    fi
+
+    sourceDir=$(realpath $sourceDir)
+    targetDir=$(realpath $targetDir)
+    templateFile=$(realpath $templateFile)
 }
 
 
 ################################################################################
 #
-# Prepare build dir structure
+# Build dir structure
 #
+function build() {
+    echo "Using \"$templateFile\" as template"
+    echo "Copying \"$sourceDir\" to \"$targetDir\""
 
-function prepare_dirs() {
-    sourceDir="`echo $sourceDir | sed -e 's,/*$,,'`"
-
+    # remove old targetDir
     rm -rf $targetDir
+
+    # copy sourceDir to targetDir
     mkdir -p $targetDir
     cp -rf $sourceDir/* $targetDir
+
+    # remove markdown files
     #rm -f `find $targetDir -type f -iname '*.md'`
-    rm -f "$targetDir/"{rigid.template.html,rigid,md2html.awk}
 
     cd $sourceDir
-    files=`find . -iname '*.*' -type f | sed -e 's,^\./,,'`
-    for file in $files; do
-        case "${file##*/}" in
-            md)
-                html="$targetDir/`echo $file | sed -e 's,.md$,.html,g'`"
-                echo "* $file"
-                generate_page $file > $html;
-                ;;
-        esac
+    files=`find . -iname '*.md' -type f | sed -e 's,^\./,,'`
+    for sourceFile in $files; do
+        targetFile="`echo $sourceFile | sed -e 's,.md$,.html,g'`"
+        echo "* $sourceFile --> $targetFile"
+        generate_page $sourceFile > $targetDir/$targetFile;
     done
+
+    # cleanup
+    rm -f "$targetDir/"{rigid.template.html,rigid,md2html.awk}
 }
 
 
@@ -95,7 +108,6 @@ function prepare_dirs() {
 #
 # @param $1 filename
 #
-
 function generate_page() {
     title=$(get_page_title "$1")
 
@@ -107,15 +119,17 @@ function generate_page() {
     fi
 
     # replace placeholders, if template exist
-    if [ -r "$template" ]; then
-        page=$(<$template)
+    if [ -r "$templateFile" ]; then
+        page=$(<$templateFile)
         page=$(echo "${page//%TITLE%/$title}")
         page=$(echo "${page//%CONTENT%/$content}")
     else
+        echo "Could not read template file: $templateFile"
         page="$content";
     fi
 
-    echo $(get_published_date $1)
+    echo $page
+    #echo $(get_published_date $1)
 }
 
 
@@ -125,7 +139,6 @@ function generate_page() {
 #
 # @param $1 filename
 #
-
 function get_published_date() {
     if [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1; then
         hash git 2>&- && gitdate=$(git log --format=%aD -- "$1" | tail -1)
@@ -145,7 +158,6 @@ function get_published_date() {
 #
 # @param $1 filename
 #
-
 function get_page_title() {
     echo "$1" # not implemented
 }
@@ -155,7 +167,8 @@ function get_page_title() {
 #
 # Create RSS for content in dir
 #
-
+# @param $1 directory
+#
 function create_rss() {
     cd $1;
     rssfile="$1.$RANDOM"
@@ -199,7 +212,10 @@ function create_rss() {
 #
 # Rigidify!
 #
-
-prepare_settings $1 $2
-prepare_dirs
+echo "Rigid $rigidVersion"
+echo ""
+prepare_settings $1 $2 $3
+build
+echo "Done."
+echo ""
 

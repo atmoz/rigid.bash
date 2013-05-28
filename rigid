@@ -120,15 +120,15 @@ function generate_page() {
     # replace placeholders, if template exist
     if [ -r "$templateFile" ]; then
         page=$(<$templateFile)
-        page=$(echo "${page//%TITLE%/$title}")
-        page=$(echo "${page//%DATE%/$date}")
-        page=$(echo "${page//%CONTENT%/$content}")
+        page=$(echo "${page//\%TITLE\%/$title}")
+        page=$(echo "${page//\%DATE\%/$date}")
+        page=$(echo "${page//\%CONTENT\%/$content}")
     else
         echo "Could not read template file: $templateFile"
         page="$content";
     fi
 
-    echo $page
+    echo "$page"
 }
 
 

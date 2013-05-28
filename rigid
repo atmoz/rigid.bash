@@ -110,6 +110,8 @@ function build() {
 #
 function generate_page() {
     title=$(get_page_title "$1")
+    published=$(get_published_date "$1")
+    date=$(date -d"$published" +%Y-%m-%d)
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then
@@ -122,6 +124,7 @@ function generate_page() {
     if [ -r "$templateFile" ]; then
         page=$(<$templateFile)
         page=$(echo "${page//%TITLE%/$title}")
+        page=$(echo "${page//%DATE%/$date}")
         page=$(echo "${page//%CONTENT%/$content}")
     else
         echo "Could not read template file: $templateFile"
@@ -129,7 +132,6 @@ function generate_page() {
     fi
 
     echo $page
-    #echo $(get_published_date $1)
 }
 
 
@@ -159,7 +161,7 @@ function get_published_date() {
 # @param $1 filename
 #
 function get_page_title() {
-    echo "$1" # not implemented
+    echo "$1" | sed -e 's/.md$//' # not implemented
 }
 
 

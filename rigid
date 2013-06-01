@@ -6,16 +6,14 @@
 # Usage: rigid [sourceDir] [targetDir] [templateFile]
 #
 # Instructions:
-# - Create "rigid.template.html" in source directory (or use third argument)
-#   with placeholders %TITLE% and %CONTENT%.
+# - Create "rigid.template.html" in source directories. Each directory will use
+#   it's own template recursively.
 # - Run this script from source directory (or add path as first argument).
 #   Source directory is copied to <sourceDir>.rigid (or secound argument).
 #   Each *.md file is converted to HTML and wrapped with your template.
 #
 # Author: Adrian Dvergsdal <atmoz.net & github.com/atmoz>
 #
-
-rigidVersion="1.0.0"
 
 
 ################################################################################
@@ -42,9 +40,8 @@ rigidVersion="1.0.0"
 #
 # @param $1 sourceDir
 # @param $2 targetDir
-# @param $3 templateFile
 #
-function prepare_settings() {
+function rigid_prepareSettings() {
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     md2html="$scriptDir/md2html.awk"
 
@@ -58,12 +55,6 @@ function prepare_settings() {
     if [ ! -z $2 ]; then
         targetDir="$2"
     fi
-
-    templateFile="$sourceDir/rigid.template.html"
-
-    if [ ! -z $3 ]; then
-        templateFile="$3"
-    fi
 }
 
 
@@ -71,7 +62,7 @@ function prepare_settings() {
 #
 # Build dir structure
 #
-function build() {
+function rigid_build() {
     echo "Copying \"$sourceDir\" to \"$targetDir\""
 
     # remove old targetDir
@@ -81,21 +72,40 @@ function build() {
     mkdir -p $targetDir
     cp -rf $sourceDir/* $targetDir
 
+    # remove files not needed in targetDir
+    rm -f "$targetDir/"{rigid,md2html.awk}
+    find "$targetDir" -name "rigid.template.html" -exec rm -f {} \;
+
     # remove markdown files
     #rm -f `find $targetDir -type f -iname '*.md'`
 
-    echo "Using \"$templateFile\" as template"
-    echo "Converting markdown to HTML"
-    cd $sourceDir
-    files=`find . -iname '*.md' -type f | sed -e 's,^\./,,'`
-    for sourceFile in $files; do
-        targetFile="`echo $sourceFile | sed -e 's,.md$,.html,g'`"
-        echo "* $sourceFile"
-        generate_page $sourceFile > $targetDir/$targetFile;
-    done
+    index=$(rigid_generateIndex)
 
-    # cleanup
-    rm -f "$targetDir/"{rigid.template.html,rigid,md2html.awk}
+    echo "Parsing markdown files ..."
+    cd $sourceDir
+    local files=`find . -iname '*.md' -type f | sed -e 's,^\./,,'`
+    for sourceFile in $files; do
+        local targetFile="`echo $sourceFile | sed -e 's,.md$,.html,g'`"
+        echo "* $sourceFile"
+        rigid_generatePage $sourceFile > $targetDir/$targetFile;
+    done
+}
+
+
+################################################################################
+#
+# Generate index
+#
+function rigid_generateIndex() {
+    cd $targetDir
+    local files=`ls $(find . -iname '*.md' -o -iname '*.html' | sed -e 's,^\./,,')`
+    echo "<ul>"
+    for file in $files; do
+        link=$(echo $file | sed -e 's,.md$,.html,g')
+        title=$(rigid_getPageTitle "$file")
+        echo "<li><a href=\"$link\">$title</a></li>"
+    done
+    echo "</ul>"
 }
 
 
@@ -105,30 +115,61 @@ function build() {
 #
 # @param $1 filename
 #
-function generate_page() {
-    title=$(get_page_title "$1")
-    published=$(get_published_date "$1")
-    date=$(date -d"$published" +%Y-%m-%d)
+function rigid_generatePage() {
+    page_title=$(rigid_getPageTitle "$1")
+    page_published=$(rigid_getPublishedDate "$1")
+    page_date=$(date -d"$page_published" +%Y-%m-%d)
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then
-        content=$(echo `$md2html $1`)
+        local content=$(echo `$md2html $1`)
     else
-        content=$(<$1)
+        local content=$(<$1)
     fi
 
-    # replace placeholders, if template exist
-    if [ -r "$templateFile" ]; then
-        page=$(<$templateFile)
-        page=$(echo "${page//\%TITLE\%/$title}")
-        page=$(echo "${page//\%DATE\%/$date}")
-        page=$(echo "${page//\%CONTENT\%/$content}")
-    else
-        echo "Could not read template file: $templateFile"
-        page="$content";
+    local pageDir="./$(dirname "$1")"
+    local numDirs=$(echo "$pageDir" | grep -o "/" | wc -l)
+
+    # if page is not in root, add one extra dir count for root template
+    if [[ "$pageDir" != "./." ]]; then
+        let numDirs=$numDirs+1
     fi
 
-    echo "$page"
+    echo "numDirs $numDirs for $pageDir in $PWD"
+    until [ $numDirs -eq 0 ]; do
+        local templateFile="$pageDir/rigid.template.html"
+        echo "TESTING $templateFile"
+
+        if [ -r "$templateFile" ]; then
+            content=$(rigid_applyTemplate "$content" "$(<$templateFile)")
+        fi
+
+        pageDir="$(dirname "$pageDir")"
+        let numDirs-=1
+    done
+
+    echo "$content"
+}
+
+
+################################################################################
+#
+# Apply template to content with placeholders
+#
+# @param $1 content
+# @param $2 template
+#
+function rigid_applyTemplate() {
+    local content="$1"
+    local template="$2"
+
+    local result="$template"
+    result=$(echo "${result//\%TITLE\%/$page_title}")
+    result=$(echo "${result//\%DATE\%/$page_date}")
+    result=$(echo "${result//\%CONTENT\%/$content}")
+    result=$(echo "${result//\%INDEX\%/$index}")
+
+    echo "$result"
 }
 
 
@@ -138,9 +179,9 @@ function generate_page() {
 #
 # @param $1 filename
 #
-function get_published_date() {
+function rigid_getPublishedDate() {
     if [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1; then
-        hash git 2>&- && gitdate=$(git log --format=%aD -- "$1" | tail -1)
+        hash git 2>&- && local gitdate=$(git log --format=%aD -- "$1" | tail -1)
     fi
 
     if [ -n "$gitdate" ]; then
@@ -157,8 +198,19 @@ function get_published_date() {
 #
 # @param $1 filename
 #
-function get_page_title() {
-    echo "$1" | sed -e 's/.md$//' # not implemented
+function rigid_getPageTitle() {
+    if [[ "$1" =~ .*\.md$ ]]; then
+        title=$(sed -n '/^# /p' <$1 | sed -e 's/^# //')
+        if [ -z "$title" ]; then
+            echo "$1" # giving up for now
+        else
+            echo "$title"
+        fi
+    elif [[ "$1" =~ .*\.html$ ]]; then
+        sed -n 's/<title>\(.*\)<\/title>/\1/Ip' <$1 | sed 's/^ *//g'
+    else
+        echo "$1"
+    fi
 }
 
 
@@ -168,9 +220,9 @@ function get_page_title() {
 #
 # @param $1 directory
 #
-function create_rss() {
+function rigid_createRss() {
     cd $1;
-    rssfile="$1.$RANDOM"
+    local rssfile="$1.$RANDOM"
     while [ -f "$rssfile" ]; do rssfile="$1.$RANDOM"; done
 
     echo '<?xml version="1.0" encoding="UTF-8" ?>' >> "$rssfile"
@@ -211,10 +263,8 @@ function create_rss() {
 #
 # Rigidify!
 #
-echo "Rigid $rigidVersion"
-echo ""
-prepare_settings $1 $2 $3
-build
+rigid_prepareSettings $1 $2 $3
+rigid_build
 echo "Done."
 echo ""
 

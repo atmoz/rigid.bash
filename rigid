@@ -135,10 +135,8 @@ function rigid_generatePage() {
         let numDirs=$numDirs+1
     fi
 
-    echo "numDirs $numDirs for $pageDir in $PWD"
     until [ $numDirs -eq 0 ]; do
         local templateFile="$pageDir/rigid.template.html"
-        echo "TESTING $templateFile"
 
         if [ -r "$templateFile" ]; then
             content=$(rigid_applyTemplate "$content" "$(<$templateFile)")

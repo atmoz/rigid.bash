@@ -103,7 +103,7 @@ function rigid_generateIndex() {
     for file in $files; do
         link=$(echo $file | sed -e 's,.md$,.html,g')
         title=$(rigid_getPageTitle "$file")
-        echo "<li><a href=\"$link\">$title</a></li>"
+        echo "<li><a href=\"/$link\">$title</a></li>"
     done
     echo "</ul>"
 }

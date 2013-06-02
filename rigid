@@ -173,7 +173,7 @@ function rigid_formatedIndex() {
 #
 function rigid_generatePage() {
     page_title=$(rigid_getPageTitle "$1")
-    page_date=$(rigid_getPublishedDate "$1" true)
+    page_date=$(rigid_getPublishedDate "$1" 2)
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then

@@ -3,7 +3,7 @@
 #
 # Rigid - Generate static webpage with markdown and simple template
 #
-# Usage: rigid [sourceDir] [targetDir] [templateFile]
+# Usage: rigid [sourceDir] [targetDir]
 #
 # Instructions:
 # - Create "rigid.template.html" in source directories. Each directory will use
@@ -45,14 +45,15 @@ function rigid_prepareSettings() {
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     md2html="$scriptDir/md2html.awk"
 
-    sourceDir="$PWD"
-    targetDir="$sourceDir/../`basename $sourceDir`.rigid"
-
-    if [ ! -z $1 ]; then
+    if [ -z $1 ]; then
+        sourceDir="$PWD"
+    else
         sourceDir="$1"
     fi
 
-    if [ ! -z $2 ]; then
+    if [ -z $2 ]; then
+        targetDir="$sourceDir/../`basename $sourceDir`.rigid"
+    else
         targetDir="$2"
     fi
 }
@@ -79,7 +80,8 @@ function rigid_build() {
     # remove markdown files
     #rm -f `find $targetDir -type f -iname '*.md'`
 
-    index=$(rigid_generateIndex)
+    # prepare index
+    readonly index=$(rigid_generateIndex)
 
     echo "Parsing markdown files ..."
     cd $sourceDir
@@ -94,20 +96,74 @@ function rigid_build() {
 
 ################################################################################
 #
-# Generate index
+# Generate index with date
 #
 function rigid_generateIndex() {
-    cd $targetDir
-    local files=`ls $(find . -iname '*.md' -o -iname '*.html' | sed -e 's,^\./,,')`
-    echo "<ul>"
+    cd $sourceDir
+    local files=$(find . -iname '*.md' -o -iname '*.html' |\
+        sed -e 's,^\./,,' -e '/rigid.template.html/d')
+
+    # add date
+    local datedFiles=""
     for file in $files; do
-        link=$(echo $file | sed -e 's,.md$,.html,g')
-        title=$(rigid_getPageTitle "$file")
-        echo "<li><a href=\"/$link\">$title</a></li>"
+        date=$(rigid_getPublishedDate "$file" 3)
+        datedFiles=$(printf "%s\n%s\t%s" "$datedFiles" "$date" "$file")
     done
-    echo "</ul>"
+
+    # remove empty lines
+    datedFiles=$(sed -e '/^$/d' <<< "$datedFiles")
+
+    echo "$datedFiles"
 }
 
+
+################################################################################
+#
+# Format index
+#
+# @param $1 filter
+# @param $2 sort by
+# @param $3 sort reverse
+#
+function rigid_formatedIndex() {
+    if [ -n "$1" ]; then
+        local filter="$1"
+    else
+        local filter='.*'
+    fi
+
+    if [ -n "$2" ]; then
+        local sortBy="$2"
+    else
+        local sortBy="name"
+    fi
+
+    if [ -n "$3" ]; then
+        local sortParams="$3"
+    else
+        local sortParams=""
+    fi
+
+    local datedIndex="$index"
+    local cleanIndex=$(echo "$index" | cut -f 2-) # remove date
+
+    # sort
+    case "$sortBy" in
+        date)
+            local formatedIndex=$(echo "$datedIndex" | sort $sortParams | cut -f 2-) ;;
+        *)
+            local formatedIndex=$(echo "$cleanIndex" | sort $sortParams) ;;
+    esac
+
+    # filter
+    formatedIndex=$(echo "$formatedIndex" | grep "$filter")
+
+    while read -r file; do
+        local link=$(echo "$file" | sed -e 's,.md$,.html,g')
+        local title=$(rigid_getPageTitle "$file")
+        echo "<li><a href=\"/$link\">$title</a></li>"
+    done <<< "$formatedIndex"
+}
 
 ################################################################################
 #
@@ -117,12 +173,11 @@ function rigid_generateIndex() {
 #
 function rigid_generatePage() {
     page_title=$(rigid_getPageTitle "$1")
-    page_published=$(rigid_getPublishedDate "$1")
-    page_date=$(date -d"$page_published" +%Y-%m-%d)
+    page_date=$(rigid_getPublishedDate "$1" true)
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then
-        local content=$(echo `$md2html $1`)
+        local content=$(echo "`$md2html "$1"`")
     else
         local content=$(<$1)
     fi
@@ -135,6 +190,7 @@ function rigid_generatePage() {
         let numDirs=$numDirs+1
     fi
 
+    # apply templates
     until [ $numDirs -eq 0 ]; do
         local templateFile="$pageDir/rigid.template.html"
 
@@ -165,7 +221,15 @@ function rigid_applyTemplate() {
     result=$(echo "${result//\%TITLE\%/$page_title}")
     result=$(echo "${result//\%DATE\%/$page_date}")
     result=$(echo "${result//\%CONTENT\%/$content}")
-    result=$(echo "${result//\%INDEX\%/$index}")
+
+    local indexPlaceholderRegex='%INDEX[\(]+(.*)[\)]+\%'
+    if [[ $result =~ $indexPlaceholderRegex ]]; then
+        local formatedIndex="$(rigid_formatedIndex ${BASH_REMATCH[1]})"
+    else
+        local formatedIndex="$(rigid_formatedIndex)"
+    fi
+
+    result=$(echo "${result//\%INDEX*\%/$formatedIndex}")
 
     echo "$result"
 }
@@ -176,17 +240,30 @@ function rigid_applyTemplate() {
 # Get date when file was added to git or created in filesystem
 #
 # @param $1 filename
+# @param $2 integer 1 for RFC 2822 (default)
+#                   2 for YYYY-MM-DD
+#                   3 for YYYY-MM-DD hh:mm:ss
 #
 function rigid_getPublishedDate() {
+    # first try git
     if [ -d .git ] || git rev-parse --git-dir > /dev/null 2>&1; then
-        hash git 2>&- && local gitdate=$(git log --format=%aD -- "$1" | tail -1)
+        hash git 2>&- && local result=$(git log --format=%aD -- "$1" | tail -1)
     fi
 
-    if [ -n "$gitdate" ]; then
-        echo "$gitdate"
-    else
-        date -R -r "$1"
+    # use filesystem if git failed
+    if [ -z "$result" ]; then
+        local result=$(date -R -r "$1")
     fi
+
+    # alternative formats
+    case $2 in
+        2)
+            result=$(date -d"$result" +%Y-%m-%d) ;;
+        3)
+            result=$(date -d"$result" +"%Y-%m-%d %H:%M:%S") ;;
+    esac
+
+    echo "$result"
 }
 
 

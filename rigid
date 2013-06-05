@@ -121,28 +121,18 @@ function rigid_generateIndex() {
 #
 # Format index
 #
-# @param $1 filter
-# @param $2 sort by
-# @param $3 sort reverse
+# @param $1 prefix URL (use "null" for empty argument)
+# @param $2 filter items based on filename
+# @param $3 sort by (name or date)
+# @param $4 sort params (see sort man page)
 #
 function rigid_formatedIndex() {
-    if [ -n "$1" ]; then
-        local filter="$1"
-    else
-        local filter='.*'
-    fi
+    local prefix=${1:-''}
+    local filter=${2:-'.*'}
+    local sortBy=${3:-"name"}
+    local sortParams=${4:-''}
 
-    if [ -n "$2" ]; then
-        local sortBy="$2"
-    else
-        local sortBy="name"
-    fi
-
-    if [ -n "$3" ]; then
-        local sortParams="$3"
-    else
-        local sortParams=""
-    fi
+    [ "$prefix" == "null" ] && prefix=''
 
     local datedIndex="$index"
     local cleanIndex=$(echo "$index" | cut -f 2-) # remove date
@@ -159,9 +149,9 @@ function rigid_formatedIndex() {
     formatedIndex=$(echo "$formatedIndex" | grep "$filter")
 
     while read -r file; do
-        local link=$(echo "$file" | sed -e 's,.md$,.html,g')
+        local link=$(echo "$prefix""$file" | sed -e 's,.md$,.html,g')
         local title=$(rigid_getPageTitle "$file")
-        echo "<li><a href=\"/$link\">$title</a></li>"
+        echo "<li><a href=\"$link\">$title</a></li>"
     done <<< "$formatedIndex"
 }
 
@@ -220,16 +210,16 @@ function rigid_applyTemplate() {
     local result="$template"
     result=$(echo "${result//\%TITLE\%/$page_title}")
     result=$(echo "${result//\%DATE\%/$page_date}")
-    result=$(echo "${result//\%CONTENT\%/$content}")
 
     local indexPlaceholderRegex='%INDEX[\(]+(.*)[\)]+\%'
     if [[ $result =~ $indexPlaceholderRegex ]]; then
-        local formatedIndex="$(rigid_formatedIndex ${BASH_REMATCH[1]})"
+        local formatedIndex=$(rigid_formatedIndex ${BASH_REMATCH[1]})
     else
-        local formatedIndex="$(rigid_formatedIndex)"
+        local formatedIndex=$(rigid_formatedIndex)
     fi
 
     result=$(echo "${result//\%INDEX*\%/$formatedIndex}")
+    result=$(echo "${result//\%CONTENT\%/$content}")
 
     echo "$result"
 }
@@ -275,7 +265,7 @@ function rigid_getPublishedDate() {
 #
 function rigid_getPageTitle() {
     if [[ "$1" =~ .*\.md$ ]]; then
-        title=$(sed -n '/^# /p' <$1 | sed -e 's/^# //')
+        title=$(sed -n '/^# /p' <$1 | sed -e 's/^# //' | head -n1)
         if [ -z "$title" ]; then
             echo "$1" # giving up for now
         else

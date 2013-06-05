@@ -92,7 +92,7 @@ function rigid_build() {
 
     echo "Parsing markdown files ..."
     cd $sourceDir
-    local files=`find . -iname '*.md' -type f | sed -e 's,^\./,,'`
+    local files=`find . -path ./.git -prune -o -iname '*.md' -type f -print | sed -e 's,^\./,,'`
     for sourceFile in $files; do
         local targetFile="`echo $sourceFile | sed -e 's,.md$,.html,g'`"
         echo "* $sourceFile"

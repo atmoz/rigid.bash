@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #
 # Rigid - Generate static webpage with markdown and simple template
@@ -45,17 +45,8 @@ function rigid_prepareSettings() {
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     md2html="$scriptDir/md2html.awk"
 
-    if [ -z $1 ]; then
-        sourceDir="$PWD"
-    else
-        sourceDir="$1"
-    fi
-
-    if [ -z $2 ]; then
-        targetDir="$sourceDir/../$(basename "$sourceDir").rigid"
-    else
-        targetDir="$2"
-    fi
+    sourceDir="$(realpath ${1:-"$PWD"})"
+    targetDir="$(realpath ${2:-"$sourceDir/../$(basename "$sourceDir").rigid"})"
 
     blacklist=".git"
 }

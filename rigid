@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-
 #
-# Rigid - Generate static webpage with markdown and simple template
+#   rigid [sourceDir] [targetDir]
 #
-# Usage: rigid [sourceDir] [targetDir]
+# Generate static webpage with markdown and simple template
+#
+# Requirements: Bash 4, gawk, realpath
 #
 # Instructions:
 # - Create "rigid.template.html" in source directories. Each directory will use

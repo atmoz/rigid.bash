@@ -4,14 +4,8 @@
 #
 # Generate static webpage with markdown and simple template
 #
-# Requirements: Bash 4, gawk, realpath
-#
-# Instructions:
-# - Create "rigid.template.html" in source directories. Each directory will use
-#   it's own template recursively.
-# - Run this script from source directory (or add path as first argument).
-#   Source directory is copied to <sourceDir>.rigid (or secound argument).
-#   Each *.md file is converted to HTML and wrapped with your template.
+# Requirements: Bash 4 and GNU implementation of AWK
+# Programs used: awk, sed, realpath, basename, dirname, find
 #
 # Author: Adrian Dvergsdal <atmoz.net & github.com/atmoz>
 #
@@ -46,8 +40,8 @@ function rigid_prepareSettings() {
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     md2html="$scriptDir/md2html.awk"
 
-    sourceDir="$(realpath ${1:-"$PWD"})"
-    targetDir="$(realpath ${2:-"$sourceDir/../$(basename "$sourceDir").rigid"})"
+    sourceDir="$(realpath "${1:-"$PWD"}")"
+    targetDir="$(realpath "${2:-"$sourceDir/../$(basename "$sourceDir").rigid"}")"
 
     blacklist=".git"
 }
@@ -69,7 +63,7 @@ function rigid_build() {
 
     # remove files not needed in targetDir
     rm -f "$targetDir/"{rigid,md2html.awk}
-    find "$targetDir" -name "rigid.template.html" -exec rm -f {} \;
+    find "$targetDir" -name "rigid.template.html" -exec rm -f "{}" \;
 
     # remove blacklisted files/folders
     for file in $blacklist; do
@@ -82,9 +76,10 @@ function rigid_build() {
     # prepare index
     readonly index="$(rigid_generateIndex)"
 
-    echo "Parsing markdown files ..."
+    echo "Parsing markdown files"
     cd "$sourceDir" || exit 1
-    local files="$(find . -path ./.git -prune -o -iname '*.md' -type f -print | sed -e 's,^\./,,')"
+    local files="$(find . -path ./.git -prune -o -iname '*.md' -type f -print)"
+    files="${files//\.\//}" # removes "./"
     for sourceFile in $files; do
         local targetFile="$(echo "$sourceFile" | sed -e 's,.md$,.html,g')"
         echo "* $sourceFile"
@@ -160,6 +155,7 @@ function rigid_formatedIndex() {
     # filter
     formatedIndex="$(echo "$formatedIndex" | grep "$filter")"
 
+    # generate list element with link for each file
     while read -r file; do
         local link="$(echo "$prefix""$file" | sed -e 's,.md$,.html,g')"
         local title="$(rigid_getPageTitle "$file")"
@@ -179,7 +175,7 @@ function rigid_generatePage() {
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then
-        local content="$(echo "$($md2html "$1")")"
+        local content="$($md2html "$1")"
     else
         local content="$(<"$1")"
     fi

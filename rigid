@@ -37,6 +37,8 @@
 # @param $2 targetDir
 #
 function rigid_prepareSettings() {
+    shopt -s extglob # extended pattern matching
+
     scriptDir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
     md2html="$scriptDir/md2html.awk"
 
@@ -226,7 +228,7 @@ function rigid_applyTemplate() {
         local formatedIndex="$(rigid_formatedIndex)"
     fi
 
-    result="$(echo "${result//\%INDEX*\%/$formatedIndex}")"
+    result="$(echo "${result//\%INDEX*([^\%])\%/$formatedIndex}")"
     result="$(echo "${result//\%CONTENT\%/$content}")"
 
     echo "$result"

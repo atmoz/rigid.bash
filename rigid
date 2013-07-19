@@ -85,7 +85,7 @@ function rigid_build() {
     for sourceFile in $files; do
         local targetFile="$(echo "$sourceFile" | sed -e 's,.md$,.html,g')"
         echo "* $sourceFile"
-        rigid_generatePage "$sourceFile" > "$targetDir/$targetFile"
+        rigid_generatePage "$sourceFile" "$targetFile"
     done
 }
 
@@ -167,22 +167,41 @@ function rigid_formatedIndex() {
 
 ################################################################################
 #
-# Generate page with template and convert markdown to HTML
+# Output text if file is being rendered
 #
 # @param $1 filename
+# @param $2 text
+#
+function rigid_iffile() {
+    local file="${1:-""}"
+    local text="${2:-""}"
+
+    if [ "$targetFile" == "$file" ]; then
+        echo "$text"
+    fi
+}
+
+################################################################################
+#
+# Generate page with template and convert markdown to HTML
+#
+# @param $1 filename from
+# @param $2 filename to
 #
 function rigid_generatePage() {
-    page_title="$(rigid_getPageTitle "$1")"
-    page_date="$(rigid_getPublishedDate "$1" 2)"
+    sourceFile="$1"
+    targetPath="$2"
+    page_title="$(rigid_getPageTitle "$sourceFile")"
+    page_date="$(rigid_getPublishedDate "$sourceFile" 2)"
 
     # convert markdown to HTML
     if [ -x "$md2html" ]; then
-        local content="$($md2html "$1")"
+        local content="$($md2html "$sourceFile")"
     else
-        local content="$(<"$1")"
+        local content="$(<"$sourceFile")"
     fi
 
-    local pageDir="./$(dirname "$1")"
+    local pageDir="./$(dirname "$sourceFile")"
     local numDirs="$(echo "$pageDir" | grep -o "/" | wc -l)"
 
     # if page is not in root, add one extra dir count for root template
@@ -202,7 +221,7 @@ function rigid_generatePage() {
         let numDirs-=1
     done
 
-    echo "$content"
+    echo "$content" > "$targetDir/$targetFile"
 }
 
 
@@ -221,14 +240,18 @@ function rigid_applyTemplate() {
     result="$(echo "${result//\%TITLE\%/$page_title}")"
     result="$(echo "${result//\%DATE\%/$page_date}")"
 
-    local indexPlaceholderRegex='%INDEX[\(]+(.*)[\)]+\%'
-    if [[ $result =~ $indexPlaceholderRegex ]]; then
+    while [[ $result =~ \%INDEX\(([^\)]*)\)\% ]]; do
         local formatedIndex="$(rigid_formatedIndex ${BASH_REMATCH[1]})"
-    else
-        local formatedIndex="$(rigid_formatedIndex)"
-    fi
+        result="$(echo "${result//${BASH_REMATCH[0]}/$formatedIndex}")"
+    done
+    local formatedIndex="$(rigid_formatedIndex)"
+    result="$(echo "${result//\%INDEX\%/$formatedIndex}")"
 
-    result="$(echo "${result//\%INDEX*([^\%])\%/$formatedIndex}")"
+    while [[ $result =~ \%IFFILE\(([^\)]*)\)\% ]]; do
+        local iffile="$(rigid_iffile ${BASH_REMATCH[1]})"
+        result="$(echo "${result//${BASH_REMATCH[0]}/$iffile}")"
+    done
+
     result="$(echo "${result//\%CONTENT\%/$content}")"
 
     echo "$result"

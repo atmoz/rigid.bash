@@ -1,4 +1,4 @@
-# Rigid
+# Rigid.bash
 
 One of my projects these days is making a simple static web page generator in Bash.
 It's a hell of a good way to learn Bash scripting.
